@@ -6,8 +6,29 @@ variable "server_port" {
   default     = 8080
 }
 
+module "skcc_dev_helloapp_label" {
+  source      = "git::https://github.com/cloudposse/terraform-null-label.git?ref=tags/0.14.1"
+  namespace   = "skcc"
+  stage       = "dev"
+  name        = "helloapp"
+  attributes  = []
+  delimiter   = "-"
+
+  tags  = {
+    "Company"     = "SK GAS"
+    "Department"  = "Unit1"
+    "User"        = "jingood2@sk.com"
+  }
+
+  additional_tag_map = {
+    propagate_at_launch = "true"
+  }
+
+}
+
 resource "aws_security_group" "instance" {
-  name = "terraform-example-instance"
+  name = "${module.skcc_dev_helloapp_label.id}-ec2"
+  tags = module.skcc_dev_helloapp_label.tags
   ingress {
     from_port   = var.server_port
     to_port     = var.server_port
@@ -17,9 +38,13 @@ resource "aws_security_group" "instance" {
 }
 
 resource "aws_launch_configuration" "example" {
+
+  # terraform-null-label example used here: Set launch configuration name prefix
+  name_prefix     = "${module.skcc_dev_helloapp_label.id}-"
   image_id        = "ami-0a25005e83c56767a"
   instance_type   = "t2.nano"
   security_groups = [aws_security_group.instance.id]
+
   user_data = <<-EOF
               #!/bin/bash
               echo "Hello, World" > index.html
@@ -31,21 +56,22 @@ resource "aws_launch_configuration" "example" {
 }
 
 resource "aws_autoscaling_group" "example" {
-  launch_configuration = aws_launch_configuration.example.id
-  availability_zones   = data.aws_availability_zones.all.names
+
+  # terraform-null-lable example used here: Set ASG name prefix
+  name_prefix           = "${module.skcc_dev_helloapp_label.id}-"
+  tags = module.skcc_dev_helloapp_label.tags_as_list_of_maps
+  launch_configuration  = aws_launch_configuration.example.id
+  availability_zones    = data.aws_availability_zones.all.names
   min_size = 2
   max_size = 3
   load_balancers    = [aws_elb.example.name]
   health_check_type = "ELB"
-  tag {
-    key                 = "Name"
-    value               = "terraform-asg-example"
-    propagate_at_launch = true
-  }
+
 }
 
 resource "aws_security_group" "elb" {
-  name = "terraform-example-elb"
+  name  = "${module.skcc_dev_helloapp_label.id}-elb"
+  tags  = module.skcc_dev_helloapp_label.tags
   # Allow all outbound
   egress {
     from_port   = 0
@@ -69,9 +95,10 @@ variable "elb_port" {
 }
 
 resource "aws_elb" "example" {
-  name               = "terraform-asg-example"
-  security_groups    = [aws_security_group.elb.id]
-  availability_zones = data.aws_availability_zones.all.names
+  name                = module.skcc_dev_helloapp_label.id
+  tags                = module.skcc_dev_helloapp_label.tags
+  security_groups     = [aws_security_group.elb.id]
+  availability_zones  = data.aws_availability_zones.all.names
 
   health_check {
     target              = "HTTP:${var.server_port}/"
